@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Catalyst AI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="/static/style.css" rel="stylesheet" />
+</head>
+<body>
+  <main class="app-shell">
+    <header class="app-header">
+      <img class="brand-logo" src="/static/catalyst-ai-logo.png" alt="Catalyst AI" />
+      <h1 class="sr-only">Catalyst AI</h1>
+    </header>
+
+    <section class="chat-shell">
+      <div class="messages" id="messages">
+        <article class="message assistant">
+          <div class="message-mark brand-mark">
+            <img src="/static/catalyst-ai-mark.png" alt="Catalyst AI" />
+          </div>
+          <div class="message-bubble">
+            <p class="message-name">Catalyst AI</p>
+            <p>How can I help you today?</p>
+          </div>
+        </article>
+      </div>
+
+      <form id="chat-form" class="composer">
+        <label class="sr-only" for="msg">Message</label>
+        <textarea id="msg" name="msg" rows="1" placeholder="Message Catalyst AI"></textarea>
+        <div class="composer-footer">
+          <button type="submit" class="send-btn">Send</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <script>
+    const textarea = document.getElementById("msg");
+    const messages = document.getElementById("messages");
+
+    function addMessage(role, text) {
+      const article = document.createElement("article");
+      article.className = `message ${role}`;
+
+      const mark = document.createElement("div");
+      mark.className = role === "user" ? "message-mark" : "message-mark brand-mark";
+
+      if (role === "user") {
+        mark.textContent = "You";
+      } else {
+        const logo = document.createElement("img");
+        logo.src = "/static/catalyst-ai-mark.png";
+        logo.alt = "Catalyst AI";
+        mark.appendChild(logo);
+      }
+
+      const bubble = document.createElement("div");
+      bubble.className = "message-bubble";
+
+      const name = document.createElement("p");
+      name.className = "message-name";
+      name.textContent = role === "user" ? "You" : "Catalyst AI";
+
+      const body = document.createElement("p");
+      body.textContent = text;
+
+      bubble.appendChild(name);
+      bubble.appendChild(body);
+      article.appendChild(mark);
+      article.appendChild(bubble);
+      messages.appendChild(article);
+      messages.scrollTop = messages.scrollHeight;
+      return article;
+    }
+
+    async function sendMessage(message) {
+      const formData = new FormData();
+      formData.append("msg", message);
+
+      const response = await fetch("/get", {
+        method: "POST",
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const payload = await response.json();
+        return payload.answer || payload.response || JSON.stringify(payload);
+      }
+
+      return response.text();
+    }
+
+    textarea.addEventListener("input", () => {
+      textarea.style.height = "auto";
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 220)}px`;
+    });
+
+    document.getElementById("chat-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const message = textarea.value.trim();
+      if (!message) {
+        return;
+      }
+
+      addMessage("user", message);
+      textarea.value = "";
+      textarea.style.height = "auto";
+
+      const pending = addMessage("assistant", "Working on that...");
+
+      try {
+        const answer = await sendMessage(message);
+        pending.querySelector(".message-bubble p:last-child").textContent = answer || "No response received.";
+      } catch (error) {
+        pending.querySelector(".message-bubble p:last-child").textContent =
+          `Something went wrong: ${error.message || error}`;
+      }
+    });
+  </script>
+</body>
+</html>

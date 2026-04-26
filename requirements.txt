@@ -1,2 +1,18 @@
 structlog==25.5.0
 ipykernel
+langchain==0.3.27
+python-dotenv
+langchain_openai==0.3.32
+langchain-google-genai==2.1.8
+langchain-groq==0.3.6
+langchain_community==0.3.27
+fastapi==0.116.1
+uvicorn==0.40.0
+jinja2
+python-multipart==0.0.6
+langchain-mcp-adapters==0.0.9
+ddgs
+mcp
+langgraph==0.6.7
+#duckduckgo-search
+-e .

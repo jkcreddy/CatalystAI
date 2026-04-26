@@ -2,7 +2,7 @@ import sys
 import traceback
 from typing import Optional, cast
 
-class DocumentPortalException(Exception):
+class CatalystAIException(Exception):
     def __init__(self, error_message, error_details: Optional[object] = None):
         # Normalize message
         if isinstance(error_message, BaseException):
@@ -48,18 +48,18 @@ class DocumentPortalException(Exception):
         return base
 
     def __repr__(self):
-        return f"DocumentPortalException(file={self.file_name!r}, line={self.lineno}, message={self.error_message!r})"
+        return f"CatalystAIException(file={self.file_name!r}, line={self.lineno}, message={self.error_message!r})"
 
 
-# if __name__ == "__main__":
-#     # Demo-1: generic exception -> wrap
-#     try:
-#         a = 1 / 0
-#     except Exception as e:
-#         raise DocumentPortalException("Division failed", e) from e
+#if __name__ == "__main__":
+#    # Demo-1: generic exception -> wrap
+#    try:
+#        a = 1 / 1
+#    except Exception as e:
+#        raise CatalystAIException("Division failed", e) from e
 
 #     # Demo-2: still supports sys (old pattern)
 #     # try:
 #     #     a = int("abc")
 #     # except Exception as e:
-#     #     raise DocumentPortalException(e, sys)
+#     #     raise CatalystAIException(e, sys)
