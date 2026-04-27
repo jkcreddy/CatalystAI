@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalyst-ai
+  labels:
+    app: catalyst-ai
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: catalyst-ai
+  template:
+    metadata:
+      labels:
+        app: catalyst-ai
+    spec:
+      containers:
+      - name: catalyst-ai
+        image: 014498647103.dkr.ecr.us-east-1.amazonaws.com/catalyst-ai:latest
+        ports:
+        - containerPort: 8000
+        env:                              
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: catalyst-ai-secrets
+              key: OPENAI_API_KEY
+        - name: GOOGLE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: catalyst-ai-secrets
+              key: GOOGLE_API_KEY
+        - name: ASTRA_DB_API_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              name: catalyst-ai-secrets
+              key: ASTRA_DB_API_ENDPOINT
+        - name: ASTRA_DB_APPLICATION_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: catalyst-ai-secrets
+              key: ASTRA_DB_APPLICATION_TOKEN
+        - name: ASTRA_DB_KEYSPACE
+          valueFrom:
+            secretKeyRef:
+              name: catalyst-ai-secrets
+              key: ASTRA_DB_KEYSPACE
