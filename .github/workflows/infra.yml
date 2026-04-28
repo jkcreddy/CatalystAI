@@ -21,7 +21,7 @@ jobs:
     - name: Deploy CloudFormation Stack
       run: |
         aws cloudformation deploy \
-          --template-file infra/eks-with-ecr.yaml \
+          --template-file infra/eks-with-ecr.yml \
           --stack-name catalyst-ai-cluster \
           --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
           --region ${{ secrets.AWS_REGION }}
