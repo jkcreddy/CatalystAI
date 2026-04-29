@@ -14,5 +14,5 @@ langchain-mcp-adapters==0.0.9
 ddgs
 mcp
 langgraph==0.6.7
-#duckduckgo-search
+duckduckgo-search
 -e .

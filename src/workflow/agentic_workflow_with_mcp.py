@@ -1,5 +1,6 @@
 import os
 import sys
+from pathlib import Path
 from typing import Annotated, Sequence, TypedDict, Literal
 from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
@@ -15,7 +16,7 @@ from utils.model_loader import ModelLoader
 from langchain_mcp_adapters.client import MultiServerMCPClient
 import asyncio
 
-PROJECT_ROOT = "/Users/kjaggav1/Library/CloudStorage/OneDrive-JCPenney/myworkspace/Hackathon/CatalystAI"
+PROJECT_ROOT = str(Path(__file__).resolve().parents[2])
 SERVER_PATH = f"{PROJECT_ROOT}/src/mcp_servers/server.py"
 
 
@@ -97,6 +98,27 @@ class AgenticAI:
         result = await tool.ainvoke({"query": query})
         context = result if result else "No data from web"
         return {"messages": [HumanMessage(content=context)]}
+
+    async def _kubectl(self, state: AgentState):
+        print("---- KUBECTL (MCP) ---")
+        query = state["messages"][0].content.strip()
+
+        prompt = ChatPromptTemplate.from_template(
+            "Convert the following user request into a valid kubectl command. "
+            "Only return the kubectl command, nothing else. "
+            "Only use read-only commands: get, describe, logs, top, explain, events, cluster-info, version.\n\n"
+            "User request: {question}\n\nkubectl command:"
+        )
+        chain = prompt | self.llm | StrOutputParser()
+        kubectl_cmd = chain.invoke({"question": query}).strip()
+
+        tool = next((t for t in self.mcp_tools if t.name == "kubectl_exec"), None)
+        if not tool:
+            return {"messages": [HumanMessage(content="No kubectl_exec tool available in MCP client.")]}
+
+        result = await tool.ainvoke({"command": kubectl_cmd})
+        context = f"Command: {kubectl_cmd}\n\nResult:\n{result}"
+        return {"messages": [HumanMessage(content=context)]}
     
     # def _grade_documents(self, state: AgentState) -> Literal["generator", "rewriter"]:
     #     print("--- GRADER ---")
@@ -150,13 +172,25 @@ class AgenticAI:
         return {"messages": [HumanMessage(content=new_q)]}
     
     # ---------- Workflow ----------
+    def _route_query(self, state: AgentState) -> Literal["Kubectl", "WebSearch"]:
+        query = state["messages"][0].content.lower()
+        k8s_keywords = ["pod", "pods", "deploy", "deployment", "service", "node", "namespace",
+                        "kubectl", "logs", "describe", "cluster", "replica", "ingress",
+                        "configmap", "secret", "pvc", "pv", "daemonset", "statefulset",
+                        "cronjob", "job", "hpa", "events", "container", "k8s", "kubernetes"]
+        if any(kw in query for kw in k8s_keywords):
+            return "Kubectl"
+        return "WebSearch"
+
     def _build_workflow(self):
         workflow = StateGraph(self.AgentState)
         workflow.add_node("Generator", self._generate)
         workflow.add_node("WebSearch", self._web_search)
+        workflow.add_node("Kubectl", self._kubectl)
 
-        workflow.add_edge(START, "WebSearch")
+        workflow.add_conditional_edges(START, self._route_query)
         workflow.add_edge("WebSearch", "Generator")
+        workflow.add_edge("Kubectl", "Generator")
         workflow.add_edge("Generator", END)
 
         return workflow
