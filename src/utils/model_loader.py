@@ -95,7 +95,7 @@ class ModelLoader:
         """
         llm_block = self.config["llm"]
         #provider_key = os.getenv("LLM_PROVIDER", "google")
-        provider_key = os.getenv("LLM_PROVIDER", "openai")
+        provider_key = os.getenv("LLM_PROVIDER", "groq")
 
         if provider_key not in llm_block:
             log.error("LLM provider not found in config", provider=provider_key)
