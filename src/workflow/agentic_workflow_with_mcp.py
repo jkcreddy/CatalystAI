@@ -79,6 +79,17 @@ class AgenticAI:
 
         return command
 
+    @staticmethod
+    def _is_restore_request(query: str) -> bool:
+        lowered = query.lower()
+        return (
+            "scale up" in lowered
+            or "restore" in lowered
+            or "original scale" in lowered
+            or "back to original" in lowered
+            or "previous scale" in lowered
+        )
+
     def _ai_assistant(self, state: AgentState):
         print("--- CALL AI ASSISTANT ---")
         messages = state["messages"]
@@ -150,6 +161,20 @@ class AgenticAI:
         result = await tool.ainvoke({"command": kubectl_cmd})
         context = f"Command: {kubectl_cmd}\n\nResult:\n{result}"
         return {"messages": [HumanMessage(content=context)]}
+
+    async def _scale_workloads(self, state: AgentState):
+        print("---- SCALE WORKLOADS (MCP) ---")
+        query = state["messages"][0].content.strip()
+        tool_name = "restore_workloads" if self._is_restore_request(query) else "scale_down_workloads"
+        tool = next((t for t in self.mcp_tools if t.name == tool_name), None)
+
+        if not tool:
+            return {"messages": [HumanMessage(content=f"No {tool_name} tool available in MCP client.")]}
+
+        result = await tool.ainvoke({})
+        action = "Restore original scale" if tool_name == "restore_workloads" else "Scale down workloads"
+        context = f"Action: {action}\n\nResult:\n{result}"
+        return {"messages": [HumanMessage(content=context)]}
     
     # def _grade_documents(self, state: AgentState) -> Literal["generator", "rewriter"]:
     #     print("--- GRADER ---")
@@ -203,12 +228,15 @@ class AgenticAI:
         return {"messages": [HumanMessage(content=new_q)]}
     
     # ---------- Workflow ----------
-    def _route_query(self, state: AgentState) -> Literal["Kubectl", "WebSearch"]:
+    def _route_query(self, state: AgentState) -> Literal["Kubectl", "ScaleWorkloads", "WebSearch"]:
         query = state["messages"][0].content.lower()
+        scaling_keywords = ["scale down", "scale up", "restore", "original scale", "replicas", "replica count"]
         k8s_keywords = ["pod", "pods", "deploy", "deployment", "service", "node", "namespace",
                         "kubectl", "logs", "describe", "cluster", "replica", "ingress",
                         "configmap", "secret", "pvc", "pv", "daemonset", "statefulset",
                         "cronjob", "job", "hpa", "events", "container", "k8s", "kubernetes"]
+        if any(kw in query for kw in scaling_keywords):
+            return "ScaleWorkloads"
         if any(kw in query for kw in k8s_keywords):
             return "Kubectl"
         return "WebSearch"
@@ -218,10 +246,12 @@ class AgenticAI:
         workflow.add_node("Generator", self._generate)
         workflow.add_node("WebSearch", self._web_search)
         workflow.add_node("Kubectl", self._kubectl)
+        workflow.add_node("ScaleWorkloads", self._scale_workloads)
 
         workflow.add_conditional_edges(START, self._route_query)
         workflow.add_edge("WebSearch", "Generator")
         workflow.add_edge("Kubectl", END)
+        workflow.add_edge("ScaleWorkloads", END)
         workflow.add_edge("Generator", END)
 
         return workflow

@@ -3,6 +3,7 @@ import shlex
 import os
 import urllib.request
 import json
+from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from langchain_community.tools import DuckDuckGoSearchRun
 
@@ -11,6 +12,8 @@ mcp = FastMCP("hybrid_search")
 ddg_search = DuckDuckGoSearchRun()
 
 K8S_PROXY = os.getenv("K8S_PROXY_URL", "http://localhost:8001")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SCALE_STATE_PATH = PROJECT_ROOT / "logs" / "k8s_scale_state.json"
 K8S_NAMESPACES = [
     ns.strip()
     for ns in os.getenv(
@@ -80,6 +83,8 @@ NAMESPACED_RESOURCES = {
     "ingress", "ingresses", "event", "events",
 }
 
+SCALABLE_RESOURCES = ("deployment", "statefulset")
+
 
 def _validate_kubectl(cmd: str) -> str | None:
     parts = shlex.split(cmd.strip())
@@ -126,6 +131,46 @@ def _query_proxy(path: str) -> str:
             return resp.read().decode("utf-8")
     except Exception as e:
         return f"Error querying proxy: {str(e)}"
+
+
+def _load_scale_state() -> dict:
+    if not SCALE_STATE_PATH.exists():
+        return {}
+    try:
+        return json.loads(SCALE_STATE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_scale_state(state: dict) -> None:
+    SCALE_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SCALE_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def _kubectl_json(args: list[str]) -> dict:
+    result = subprocess.run(
+        args + ["-o", "json"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        err = result.stderr.strip() or "kubectl command failed"
+        raise RuntimeError(err)
+    return json.loads(result.stdout)
+
+
+def _kubectl_scale(resource_type: str, name: str, replicas: int, namespace: str) -> str:
+    result = subprocess.run(
+        ["kubectl", "scale", resource_type, name, f"--replicas={replicas}", "-n", namespace],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        err = result.stderr.strip() or "kubectl scale failed"
+        raise RuntimeError(err)
+    return result.stdout.strip() or f"Scaled {resource_type}/{name} to {replicas}"
 
 
 @mcp.tool()
@@ -203,6 +248,88 @@ async def kubectl_exec(command: str) -> str:
         return "Command timed out after 30 seconds"
     except Exception as e:
         return f"Error executing command: {str(e)}"
+
+
+@mcp.tool()
+async def scale_down_workloads(namespace: str | None = None) -> str:
+    """Scale deployments/statefulsets down to 1 replica when currently above 1, and save original replica counts."""
+    target_ns = (namespace or K8S_NAMESPACE).strip()
+    state = _load_scale_state()
+    ns_state = state.setdefault(target_ns, {})
+    changed: list[str] = []
+    skipped: list[str] = []
+
+    try:
+        for resource_type in SCALABLE_RESOURCES:
+            data = _kubectl_json(["kubectl", "get", resource_type, "-n", target_ns])
+            for item in data.get("items", []):
+                name = item["metadata"]["name"]
+                replicas = int(item.get("spec", {}).get("replicas", 1) or 1)
+
+                if replicas > 1:
+                    ns_state[f"{resource_type}/{name}"] = replicas
+                    _kubectl_scale(resource_type, name, 1, target_ns)
+                    changed.append(f"{resource_type}/{name}: {replicas} -> 1")
+                else:
+                    skipped.append(f"{resource_type}/{name}: already {replicas}")
+    except Exception as e:
+        return f"Error scaling down workloads in namespace {target_ns}: {str(e)}"
+
+    _save_scale_state(state)
+
+    lines = [f"Namespace: {target_ns}"]
+    if changed:
+        lines.append("Scaled down:")
+        lines.extend(changed)
+    else:
+        lines.append("No workloads needed scaling down.")
+
+    if skipped:
+        lines.append("")
+        lines.append("Skipped:")
+        lines.extend(skipped)
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def restore_workloads(namespace: str | None = None) -> str:
+    """Restore deployments/statefulsets to the original replica counts saved by scale_down_workloads."""
+    target_ns = (namespace or K8S_NAMESPACE).strip()
+    state = _load_scale_state()
+    ns_state = state.get(target_ns, {})
+
+    if not ns_state:
+        return f"No saved scale state found for namespace {target_ns}."
+
+    restored: list[str] = []
+    errors: list[str] = []
+
+    for resource_key, replicas in list(ns_state.items()):
+        resource_type, name = resource_key.split("/", 1)
+        try:
+            _kubectl_scale(resource_type, name, int(replicas), target_ns)
+            restored.append(f"{resource_key}: restored to {replicas}")
+            del ns_state[resource_key]
+        except Exception as e:
+            errors.append(f"{resource_key}: {str(e)}")
+
+    if ns_state:
+        state[target_ns] = ns_state
+    else:
+        state.pop(target_ns, None)
+    _save_scale_state(state)
+
+    lines = [f"Namespace: {target_ns}"]
+    if restored:
+        lines.append("Restored:")
+        lines.extend(restored)
+    if errors:
+        lines.append("")
+        lines.append("Errors:")
+        lines.extend(errors)
+
+    return "\n".join(lines)
 
 
 @mcp.tool()
