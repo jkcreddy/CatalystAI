@@ -11,7 +11,14 @@ mcp = FastMCP("hybrid_search")
 ddg_search = DuckDuckGoSearchRun()
 
 K8S_PROXY = os.getenv("K8S_PROXY_URL", "http://localhost:8001")
-K8S_NAMESPACE = os.getenv("K8S_NAMESPACE", "integration4a")
+K8S_NAMESPACES = [
+    ns.strip()
+    for ns in os.getenv(
+        "K8S_NAMESPACES",
+        os.getenv("K8S_NAMESPACE", "integration2a,integration3a,integration4a,integration5a,integration6a, loadtest1a,loadtest2a"),
+    ).split(",")
+    if ns.strip()
+]
 
 ALLOWED_KUBECTL_COMMANDS = {
     "get", "describe", "logs", "top", "explain",
@@ -27,6 +34,53 @@ BLOCKED_KUBECTL_COMMANDS = {
 }
 
 
+def _pick_active_namespace() -> str:
+    """Pick the first configured namespace that currently exists and is Active."""
+    try:
+        result = subprocess.run(
+            [
+                "kubectl",
+                "get",
+                "ns",
+                "-o",
+                "jsonpath={range .items[*]}{.metadata.name}:{.status.phase}{'\\n'}{end}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except Exception:
+        return K8S_NAMESPACES[0]
+
+    if result.returncode != 0 or not result.stdout.strip():
+        return K8S_NAMESPACES[0]
+
+    available: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        if ":" not in line:
+            continue
+        name, phase = line.split(":", 1)
+        available[name.strip()] = phase.strip()
+
+    for namespace in K8S_NAMESPACES:
+        if available.get(namespace) == "Active":
+            return namespace
+
+    return K8S_NAMESPACES[0]
+
+
+K8S_NAMESPACE = _pick_active_namespace()
+
+NAMESPACED_RESOURCES = {
+    "pod", "pods", "deploy", "deployment", "deployments", "service", "services",
+    "svc", "replicaset", "replicasets", "rs", "configmap", "configmaps",
+    "secret", "secrets", "pvc", "pvcs", "job", "jobs", "cronjob", "cronjobs",
+    "daemonset", "daemonsets", "ds", "statefulset", "statefulsets", "sts",
+    "ingress", "ingresses", "event", "events",
+}
+
+
 def _validate_kubectl(cmd: str) -> str | None:
     parts = shlex.split(cmd.strip())
     if not parts or parts[0] != "kubectl":
@@ -39,6 +93,29 @@ def _validate_kubectl(cmd: str) -> str | None:
     if subcommand not in ALLOWED_KUBECTL_COMMANDS:
         return f"'{subcommand}' is not in the allowed commands list"
     return None
+
+
+def _has_namespace(parts: list[str]) -> bool:
+    for i, part in enumerate(parts):
+        if part == "-n" and i + 1 < len(parts):
+            return True
+        if part.startswith("--namespace="):
+            return True
+    return False
+
+
+def _inject_namespace(parts: list[str]) -> list[str]:
+    """Add the selected active namespace to namespaced kubectl commands when omitted."""
+    if len(parts) < 3 or _has_namespace(parts):
+        return parts
+
+    subcommand = parts[1]
+    resource = parts[2].lower()
+
+    if subcommand in {"get", "describe", "logs", "top", "events"} and resource in NAMESPACED_RESOURCES:
+        return [*parts, "-n", K8S_NAMESPACE]
+
+    return parts
 
 
 def _query_proxy(path: str) -> str:
@@ -63,7 +140,7 @@ async def kubectl_exec(command: str) -> str:
         return f"Rejected: {error}"
 
     # Try kubectl proxy first, fall back to direct kubectl
-    parts = shlex.split(command.strip())
+    parts = _inject_namespace(shlex.split(command.strip()))
     subcommand = parts[1]
 
     # Attempt via kubectl proxy for common get commands

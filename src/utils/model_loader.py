@@ -13,7 +13,7 @@ from src.exception.custom_exception import CatalystAIException
 
 
 class ApiKeyManager:
-    REQUIRED_KEYS = ["GROQ_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY"]
+    KNOWN_KEYS = ["GROQ_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY"]
 
     def __init__(self):
         self.api_keys = {}
@@ -29,18 +29,12 @@ class ApiKeyManager:
                 log.warning(f"Failed to parse API_KEYS env var: {e}")
 
         # Fallback to individual env vars
-        for key in self.REQUIRED_KEYS:
+        for key in self.KNOWN_KEYS:
             if not self.api_keys.get(key):
                 value = os.getenv(key)
                 if value:
                     self.api_keys[key] = value
                     log.info(f"Loaded {key} from individual env var.")
-
-        # Final Check
-        missing = [k for k in self.REQUIRED_KEYS if not self.api_keys.get(k)]
-        if missing:
-            log.error(f"Missing required API keys: {missing}")
-            raise CatalystAIException(f"Missing required API keys", sys)
         
         log.info("API keys loaded", keys={k: v[:6] + "..." for k, v in self.api_keys.items()})
 
@@ -48,6 +42,13 @@ class ApiKeyManager:
         val = self.api_keys.get(key)
         if not val:
             raise CatalystAIException(f"API key '{key}' not found", sys)
+        return val
+
+    def require(self, key: str) -> str:
+        val = self.api_keys.get(key)
+        if not val:
+            log.error(f"Missing required API key: {key}")
+            raise CatalystAIException(f"Missing required API key: {key}", sys)
         return val
     
 class ModelLoader:
@@ -79,7 +80,7 @@ class ModelLoader:
             #)
             embedding = OpenAIEmbeddings(
                 model=model_name,
-                openai_api_key=self.api_key_mgr.get("OPENAI_API_KEY")
+                openai_api_key=self.api_key_mgr.require("OPENAI_API_KEY")
             )
             log.info("Embedding model loaded successfully")
             return embedding
@@ -91,11 +92,11 @@ class ModelLoader:
     def load_llm(self):
         """
         Load and return the LLM based on configuration.
-        Supports Google Generative AI and Groq models.
+        Supports Google Generative AI, Groq, and OpenAI models.
         """
         llm_block = self.config["llm"]
         #provider_key = os.getenv("LLM_PROVIDER", "google")
-        provider_key = os.getenv("LLM_PROVIDER", "groq")
+        provider_key = os.getenv("LLM_PROVIDER", "openai")
 
         if provider_key not in llm_block:
             log.error("LLM provider not found in config", provider=provider_key)
@@ -112,7 +113,7 @@ class ModelLoader:
         if provider == "google":
             return ChatGoogleGenerativeAI(
                 model=model_name,
-                google_api_key=self.api_key_mgr.get("GOOGLE_API_KEY"),
+                google_api_key=self.api_key_mgr.require("GOOGLE_API_KEY"),
                 temperature=temperature,
                 max_output_tokens=max_tokens
             )
@@ -120,14 +121,14 @@ class ModelLoader:
         elif provider == "groq":
             return ChatGroq(
                 model=model_name,
-                api_key=self.api_key_mgr.get("GROQ_API_KEY"), #type: ignore
+                api_key=self.api_key_mgr.require("GROQ_API_KEY"), #type: ignore
                 temperature=temperature,
             )
 
         elif provider == "openai":
             return ChatOpenAI(
                 model=model_name,
-                api_key=self.api_key_mgr.get("OPENAI_API_KEY"),
+                api_key=self.api_key_mgr.require("OPENAI_API_KEY"),
                 temperature=temperature,
                 max_tokens=max_tokens
             )

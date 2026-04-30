@@ -171,7 +171,7 @@ textarea {
   color: rgba(255, 255, 255, 0.85);
 }
 
-.message.user .message-bubble p:last-child {
+.message.user .message-content {
   color: #fff;
 }
 
@@ -192,11 +192,13 @@ textarea {
   letter-spacing: 0.02em;
 }
 
-.message-bubble p:last-child {
+.message-content {
   margin: 0;
   color: var(--text);
   line-height: 1.65;
   font-size: 14.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .composer {

@@ -53,6 +53,32 @@ class AgenticAI:
         })
     
     # ---------- Nodes ----------
+    @staticmethod
+    def _normalize_kubectl_command(raw_command: str) -> str:
+        """Strip markdown/code-fence formatting and keep only the kubectl command."""
+        command = raw_command.strip()
+
+        if command.startswith("```"):
+            lines = [line.rstrip() for line in command.splitlines()]
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            command = "\n".join(lines).strip()
+
+        if command.lower().startswith("bash"):
+            command = command[4:].strip()
+
+        if command.lower().startswith("kubectl command:"):
+            command = command.split(":", 1)[1].strip()
+
+        for line in command.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("kubectl "):
+                return stripped
+
+        return command
+
     def _ai_assistant(self, state: AgentState):
         print("--- CALL AI ASSISTANT ---")
         messages = state["messages"]
@@ -105,12 +131,17 @@ class AgenticAI:
 
         prompt = ChatPromptTemplate.from_template(
             "Convert the following user request into a valid kubectl command. "
-            "Only return the kubectl command, nothing else. "
-            "Only use read-only commands: get, describe, logs, top, explain, events, cluster-info, version.\n\n"
-            "User request: {question}\n\nkubectl command:"
+            "Return only a single plain-text kubectl command. "
+            "Do not wrap the command in markdown, code fences, backticks, or any explanation. "
+            "Do not prefix the answer with 'bash' or 'kubectl command:'. "
+            "Only use read-only commands: get, describe, logs, top, explain, events, cluster-info, version. "
+            "Your response must start with the word kubectl.\n\n"
+            "User request: {question}\n\nkubectl"
         )
         chain = prompt | self.llm | StrOutputParser()
-        kubectl_cmd = chain.invoke({"question": query}).strip()
+        kubectl_cmd = self._normalize_kubectl_command(
+            chain.invoke({"question": query}).strip()
+        )
 
         tool = next((t for t in self.mcp_tools if t.name == "kubectl_exec"), None)
         if not tool:
@@ -190,7 +221,7 @@ class AgenticAI:
 
         workflow.add_conditional_edges(START, self._route_query)
         workflow.add_edge("WebSearch", "Generator")
-        workflow.add_edge("Kubectl", "Generator")
+        workflow.add_edge("Kubectl", END)
         workflow.add_edge("Generator", END)
 
         return workflow

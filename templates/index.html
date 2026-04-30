@@ -43,6 +43,16 @@
     const textarea = document.getElementById("msg");
     const messages = document.getElementById("messages");
 
+    function normalizeMessageText(text) {
+      if (typeof text !== "string") {
+        return String(text ?? "");
+      }
+      return text
+        .replace(/\\r\\n/g, "\n")
+        .replace(/\\n/g, "\n")
+        .replace(/\\t/g, "\t");
+    }
+
     function addMessage(role, text) {
       const article = document.createElement("article");
       article.className = `message ${role}`;
@@ -66,8 +76,9 @@
       name.className = "message-name";
       name.textContent = role === "user" ? "You" : "Catalyst AI";
 
-      const body = document.createElement("p");
-      body.textContent = text;
+      const body = document.createElement("div");
+      body.className = "message-content";
+      body.textContent = normalizeMessageText(text);
 
       bubble.appendChild(name);
       bubble.appendChild(body);
@@ -120,10 +131,11 @@
 
       try {
         const answer = await sendMessage(message);
-        pending.querySelector(".message-bubble p:last-child").textContent = answer || "No response received.";
+        pending.querySelector(".message-content").textContent =
+          normalizeMessageText(answer || "No response received.");
       } catch (error) {
-        pending.querySelector(".message-bubble p:last-child").textContent =
-          `Something went wrong: ${error.message || error}`;
+        pending.querySelector(".message-content").textContent =
+          normalizeMessageText(`Something went wrong: ${error.message || error}`);
       }
     });
   </script>
