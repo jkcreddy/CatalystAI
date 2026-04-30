@@ -243,7 +243,8 @@ async def kubectl_exec(command: str) -> str:
         err = result.stderr.strip() if result.stderr else ""
         if result.returncode != 0:
             return f"Error:\n{err}" if err else "Command failed with no output"
-        return output if output else "Command executed successfully (no output)"
+        executed_command = " ".join(parts)
+        return output if output else f"No output returned by command: {executed_command}"
     except subprocess.TimeoutExpired:
         return "Command timed out after 30 seconds"
     except Exception as e:

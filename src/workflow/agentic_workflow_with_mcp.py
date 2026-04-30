@@ -90,6 +90,24 @@ class AgenticAI:
             or "previous scale" in lowered
         )
 
+    @staticmethod
+    def _is_k8s_issue_query(query: str) -> bool:
+        lowered = query.lower()
+        issue_keywords = [
+            "down", "not working", "not running", "failing", "failed", "crash",
+            "crashloop", "error", "unhealthy", "pending", "stuck", "restart",
+            "restarts", "unavailable", "503", "500", "timeout", "why is", "reason",
+        ]
+        return any(keyword in lowered for keyword in issue_keywords)
+
+    def _normalize_command_list(self, raw_commands: str) -> list[str]:
+        commands: list[str] = []
+        for line in raw_commands.splitlines():
+            normalized = self._normalize_kubectl_command(line)
+            if normalized.startswith("kubectl ") and normalized not in commands:
+                commands.append(normalized)
+        return commands[:3]
+
     def _ai_assistant(self, state: AgentState):
         print("--- CALL AI ASSISTANT ---")
         messages = state["messages"]
@@ -140,6 +158,34 @@ class AgenticAI:
         print("---- KUBECTL (MCP) ---")
         query = state["messages"][0].content.strip()
 
+        tool = next((t for t in self.mcp_tools if t.name == "kubectl_exec"), None)
+        if not tool:
+            return {"messages": [HumanMessage(content="No kubectl_exec tool available in MCP client.")]}
+
+        if self._is_k8s_issue_query(query):
+            prompt = ChatPromptTemplate.from_template(
+                "The user is asking for the reason a Kubernetes resource is down or unhealthy. "
+                "Generate up to 3 plain-text read-only kubectl commands, one per line, that help diagnose the issue. "
+                "Prefer commands like describe, logs, get pods, get events, and get endpoints. "
+                "Do not use markdown, bullets, numbering, code fences, explanations, or write commands. "
+                "Every line must start with kubectl.\n\n"
+                "User request: {question}"
+            )
+            chain = prompt | self.llm | StrOutputParser()
+            raw_commands = chain.invoke({"question": query}).strip()
+            kubectl_commands = self._normalize_command_list(raw_commands)
+
+            if not kubectl_commands:
+                kubectl_commands = ["kubectl get pods"]
+
+            sections = [f"Kubernetes diagnosis for: {query}"]
+            for index, kubectl_cmd in enumerate(kubectl_commands, start=1):
+                result = await tool.ainvoke({"command": kubectl_cmd})
+                sections.append(f"\nCommand {index}: {kubectl_cmd}")
+                sections.append(f"Result {index}:\n{result}")
+
+            return {"messages": [HumanMessage(content="\n".join(sections))]}
+
         prompt = ChatPromptTemplate.from_template(
             "Convert the following user request into a valid kubectl command. "
             "Return only a single plain-text kubectl command. "
@@ -153,11 +199,6 @@ class AgenticAI:
         kubectl_cmd = self._normalize_kubectl_command(
             chain.invoke({"question": query}).strip()
         )
-
-        tool = next((t for t in self.mcp_tools if t.name == "kubectl_exec"), None)
-        if not tool:
-            return {"messages": [HumanMessage(content="No kubectl_exec tool available in MCP client.")]}
-
         result = await tool.ainvoke({"command": kubectl_cmd})
         context = f"Command: {kubectl_cmd}\n\nResult:\n{result}"
         return {"messages": [HumanMessage(content=context)]}
@@ -228,6 +269,12 @@ class AgenticAI:
         return {"messages": [HumanMessage(content=new_q)]}
     
     # ---------- Workflow ----------
+    def _route_after_kubectl(self, state: AgentState) -> Literal["Generator", "__end__"]:
+        query = state["messages"][0].content
+        if self._is_k8s_issue_query(query):
+            return "Generator"
+        return END
+
     def _route_query(self, state: AgentState) -> Literal["Kubectl", "ScaleWorkloads", "WebSearch"]:
         query = state["messages"][0].content.lower()
         scaling_keywords = ["scale down", "scale up", "restore", "original scale", "replicas", "replica count"]
@@ -250,7 +297,7 @@ class AgenticAI:
 
         workflow.add_conditional_edges(START, self._route_query)
         workflow.add_edge("WebSearch", "Generator")
-        workflow.add_edge("Kubectl", END)
+        workflow.add_conditional_edges("Kubectl", self._route_after_kubectl)
         workflow.add_edge("ScaleWorkloads", END)
         workflow.add_edge("Generator", END)
 

@@ -34,6 +34,9 @@ PROMPT_REGISTRY: Dict[PromptType, PromptTemplate] = {
         For read-only Kubernetes requests, use kubectl command output from the provided context.
         For scaling requests, trust the scaling tool output from the provided context, especially when it mentions saved original replica counts and restore actions.
         Do not invent pod names, replica counts, or command output. Base your answer only on the provided context.
+        When the user asks why a pod, deployment, or service is down, do not just repeat command output.
+        Explain the likely reason in human-readable language, cite the strongest evidence from the context, and suggest the next 1 to 3 checks or fixes.
+        If the context is insufficient to determine the reason, say that clearly and mention what is missing.
         Analyze the provided cluster information, resource configurations, and logs to provide accurate, helpful responses.
         First, consider the data from mcp server tool by mcp which will provide relevant Kubernetes information.
         Stay relevant to the context, and keep your answers concise and informative.
