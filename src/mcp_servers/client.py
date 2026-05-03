@@ -1,24 +1,33 @@
 import asyncio
 import os
+import sys
+
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SERVER_PATH = f"{PROJECT_ROOT}/mcp_servers/server.py"
+KUBERNETES_MCP_URL = os.getenv(
+    "KUBERNETES_MCP_URL",
+    "http://mcp-server-kubernetes-service:8080/sse",
+)
 
 async def main():
     async with MultiServerMCPClient({
         "hybrid_search": {
-            "command": "python",
+            "command": sys.executable,
             "args": [SERVER_PATH],
             "transport": "stdio",
             "env": {
                 **os.environ,
                 "PYTHONPATH": PROJECT_ROOT
             }
+        },
+        "kubernetes": {
+            "url": KUBERNETES_MCP_URL,
+            "transport": "sse",
         }
     }) as client:
 
-        # IMPORTANT: await this
         tools = client.get_tools()
         print("Available tools:", [t.name for t in tools])
 

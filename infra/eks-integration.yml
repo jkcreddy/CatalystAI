@@ -1,19 +1,19 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Standalone EKS Cluster with NodeGroup and ECR Repository
+Description: Standalone EKS Cluster with NodeGroup
 
 Parameters:
   ClusterName:
     Type: String
-    Default: catalystai-eks-cluster
+    Default: integration-eks-cluster
   NodeInstanceType:
     Type: String
     Default: t3.medium
   DesiredCapacity:
     Type: Number
     Default: 2
-  ECRRepositoryName:
-    Type: String
-    Default: catalystai-ecr-repo
+  #ECRRepositoryName:
+  #  Type: String
+  #  Default: integration-ecr-repo
 
 Resources:
   ### --- VPC ---
@@ -105,13 +105,13 @@ Resources:
 
   ### --- ECR Repository ---
 
-  CatalystAIECR:
-    Type: AWS::ECR::Repository
-    Properties:
-      RepositoryName: !Ref ECRRepositoryName
-      ImageScanningConfiguration:
-        ScanOnPush: true
-      ImageTagMutability: MUTABLE
+  #CatalystAIECR:
+  #  Type: AWS::ECR::Repository
+  #  Properties:
+  #    RepositoryName: !Ref ECRRepositoryName
+  #    ImageScanningConfiguration:
+  #      ScanOnPush: true
+  #    ImageTagMutability: MUTABLE
 
   ### --- IAM Role for EKS Cluster ---
   EKSClusterRole:
@@ -175,11 +175,11 @@ Resources:
 
 
 Outputs:
-  ECRRepositoryUri:
-    Description: URI of the ECR Repository
-    Value: !GetAtt CatalystAIECR.RepositoryUri
-    Export:
-      Name: CatalystAI-ECR-Uri
+  #ECRRepositoryUri:
+  #  Description: URI of the ECR Repository
+  #  Value: !GetAtt CatalystAIECR.RepositoryUri
+  #  Export:
+  #    Name: CatalystAI-ECR-Uri
 
   EKSClusterName:
     Description: Name of the EKS Cluster

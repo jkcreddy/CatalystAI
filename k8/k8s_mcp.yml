@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-server-kubernetes
+  labels:
+    app: mcp-server-kubernetes
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcp-server-kubernetes
+  template:
+    metadata:
+      labels:
+        app: mcp-server-kubernetes
+    spec:
+      containers:
+      - name: mcp-server-kubernetes
+        image: 014498647103.dkr.ecr.us-east-1.amazonaws.com/mcp-server-kubernetes:latest
+        imagePullPolicy: Always
+        ports:
+        - name: mcp
+          containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-server-kubernetes-service
+  labels:
+    app: mcp-server-kubernetes
+spec:
+  type: ClusterIP
+  selector:
+    app: mcp-server-kubernetes
+  ports:
+  - name: mcp
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
