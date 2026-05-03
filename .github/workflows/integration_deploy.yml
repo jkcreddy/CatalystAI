@@ -1,4 +1,4 @@
-name: Deploy App to EKS
+name: Deploy Integration Cluster
 
 on:
   push:

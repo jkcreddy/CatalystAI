@@ -1,4 +1,4 @@
-name: Provision Infra (EKS + ECR)
+name: Provision Infra CatalystAI(EKS + ECR)
 
 on:
   workflow_dispatch: # Allow manual triggering of the workflow

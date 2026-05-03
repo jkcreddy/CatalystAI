@@ -1,4 +1,4 @@
-name: Deploy App to EKS
+name: Deploy App to CatalystAI EKS Cluster
 
 on:
   push:
