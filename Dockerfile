@@ -15,4 +15,4 @@ COPY . .
 EXPOSE 8000
 
 # run uvicorn properly on 0.0.0.0:8000
-CMD ["bash", "-c", "python src/mcp_servers/server.py & uvicorn src.router.main:app --host 0.0.0.0 --port 8000 --workers 2"]
+CMD ["bash", "-c", "uvicorn src.router.main:app --host 0.0.0.0 --port 8000 --workers 2"]
