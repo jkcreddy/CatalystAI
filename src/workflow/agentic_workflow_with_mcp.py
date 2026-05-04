@@ -20,7 +20,7 @@ PROJECT_ROOT = str(Path(__file__).resolve().parents[2])
 SERVER_PATH = f"{PROJECT_ROOT}/src/mcp_servers/server.py"
 KUBERNETES_MCP_URL = os.getenv(
     "KUBERNETES_MCP_URL",
-    "http://mcp-server-kubernetes-service:8080/sse",
+    "http://mcp-server-kubernetes-service:3000/sse",
 )
 
 
