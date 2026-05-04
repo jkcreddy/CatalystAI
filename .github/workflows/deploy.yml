@@ -103,6 +103,17 @@ jobs:
         kubectl apply -f k8/service.yml
         kubectl apply -f k8/k8s_mcp.yml
 
+    - name: Debug Kubernetes resources after apply
+      run: |
+        echo "=== Deployments ==="
+        kubectl get deployments -o wide || true
+        echo "=== Pods ==="
+        kubectl get pods -o wide || true
+        echo "=== Services ==="
+        kubectl get services -o wide || true
+        echo "=== Endpoints ==="
+        kubectl get endpoints -o wide || true
+
     - name: Patch deployment with new image tag
       env:
         ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
@@ -110,6 +121,32 @@ jobs:
         IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}
       run: |
         kubectl set image deployment/catalyst-ai catalyst-ai=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+    - name: Verify MCP Server Deployment
+      run: |
+        set -e
+        if ! kubectl rollout status deployment/mcp-server-kubernetes --timeout=120s; then
+          echo "MCP rollout failed, collecting debug info..."
+          kubectl describe deployment/mcp-server-kubernetes || true
+          kubectl get pods -l app=mcp-server-kubernetes -o wide || true
+          kubectl get service mcp-server-kubernetes-service -o wide || true
+          kubectl get endpoints mcp-server-kubernetes-service -o wide || true
+          for pod in $(kubectl get pods -l app=mcp-server-kubernetes -o jsonpath='{.items[*].metadata.name}'); do
+            echo "--- Describe for $pod ---"
+            kubectl describe pod "$pod" || true
+            echo "--- Logs for $pod ---"
+            kubectl logs "$pod" --all-containers=true || true
+            echo "--- Previous logs for $pod ---"
+            kubectl logs "$pod" --previous --all-containers=true || true
+          done
+          exit 1
+        fi
+
+    - name: Show MCP Service details
+      run: |
+        kubectl get service mcp-server-kubernetes-service -o wide || true
+        kubectl get endpoints mcp-server-kubernetes-service -o wide || true
+        kubectl get pods -l app=mcp-server-kubernetes -o wide || true
 
     # Verify rollout
     - name: Verify Deployment
