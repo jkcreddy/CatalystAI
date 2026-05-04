@@ -28,6 +28,9 @@ spec:
         - 0.0.0.0
         - --port
         - "8080"
+        env:
+        - name: ENABLE_UNSAFE_SSE_TRANSPORT
+          value: "true"
         ports:
         - name: mcp
           containerPort: 8080
