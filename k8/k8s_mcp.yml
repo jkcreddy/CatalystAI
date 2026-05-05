@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: mcp-server-kubernetes
-        image: 014498647103.dkr.ecr.us-east-1.amazonaws.com/mcp-server-kubernetes:latest
+        image: 014498647103.dkr.ecr.us-east-1.amazonaws.com/kubernetes-mcp-server:latest
         imagePullPolicy: Always
         command:
         - node
