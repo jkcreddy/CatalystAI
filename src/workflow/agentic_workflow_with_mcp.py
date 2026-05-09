@@ -1,6 +1,4 @@
 import os
-import sys
-from pathlib import Path
 from typing import Annotated, Sequence, TypedDict, Literal
 from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
@@ -16,12 +14,19 @@ from utils.model_loader import ModelLoader
 from langchain_mcp_adapters.client import MultiServerMCPClient
 import asyncio
 
-PROJECT_ROOT = str(Path(__file__).resolve().parents[2])
-SERVER_PATH = f"{PROJECT_ROOT}/src/mcp_servers/server.py"
-KUBERNETES_MCP_URL = os.getenv(
-    "KUBERNETES_MCP_URL",
-    "http://mcp-server-kubernetes-service:3000/sse",
-)
+
+def _get_kubernetes_mcp_url() -> str:
+    explicit_url = os.getenv("KUBERNETES_MCP_URL")
+    if explicit_url:
+        return explicit_url
+
+    if os.getenv("KUBERNETES_SERVICE_HOST"):
+        return "http://mcp-server-kubernetes-service:3000/sse"
+
+    raise RuntimeError(
+        "KUBERNETES_MCP_URL is not set. Configure the remote Kubernetes MCP server URL "
+        "or run this application from inside the cluster."
+    )
 
 
 class AgenticAI:
@@ -44,18 +49,10 @@ class AgenticAI:
 
     # ----------Helper Methods----------
     def _build_mcp_client(self) -> MultiServerMCPClient:
+        kubernetes_mcp_url = _get_kubernetes_mcp_url()
         return MultiServerMCPClient({
-            "product_retriever": {
-                "command": sys.executable,
-                "args": [SERVER_PATH],
-                "transport": "stdio",
-                "env": {
-                    **os.environ,
-                    "PYTHONPATH": PROJECT_ROOT
-                }
-            },
             "kubernetes": {
-                "url": KUBERNETES_MCP_URL,
+                "url": kubernetes_mcp_url,
                 "transport": "sse",
             }
         })
