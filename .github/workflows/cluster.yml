@@ -44,6 +44,24 @@ jobs:
           --region ${{ secrets.AWS_REGION }} \
           --query "Exports[?Name=='CatalystAI-VPC-Id' || Name=='CatalystAI-PublicRouteTable-Id']" \
           --output table
+        VPC_EXPORT=$(aws cloudformation list-exports \
+          --region ${{ secrets.AWS_REGION }} \
+          --query "Exports[?Name=='CatalystAI-VPC-Id'].Value | [0]" \
+          --output text)
+        ROUTE_TABLE_EXPORT=$(aws cloudformation list-exports \
+          --region ${{ secrets.AWS_REGION }} \
+          --query "Exports[?Name=='CatalystAI-PublicRouteTable-Id'].Value | [0]" \
+          --output text)
+        if [ -z "$VPC_EXPORT" ] || [ "$VPC_EXPORT" = "None" ]; then
+          echo "Missing required export: CatalystAI-VPC-Id"
+          echo "Run the main infra workflow first so the shared VPC export is created."
+          exit 1
+        fi
+        if [ -z "$ROUTE_TABLE_EXPORT" ] || [ "$ROUTE_TABLE_EXPORT" = "None" ]; then
+          echo "Missing required export: CatalystAI-PublicRouteTable-Id"
+          echo "Run the main infra workflow again after the latest template changes so the shared route table export is created."
+          exit 1
+        fi
 
     - name: Deploy CloudFormation Stack
       run: |
