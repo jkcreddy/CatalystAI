@@ -161,7 +161,7 @@ Resources:
     Type: AWS::EKS::Nodegroup
     DependsOn: EKSCluster   # ensures cluster is ready
     Properties:
-      ClusterName: !Ref ClusterName
+      ClusterName: !Ref EKSCluster
       NodeRole: !GetAtt NodeGroupRole.Arn
       Subnets:
         - !Ref PublicSubnet1

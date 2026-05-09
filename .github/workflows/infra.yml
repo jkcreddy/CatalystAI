@@ -20,8 +20,18 @@ jobs:
 
     - name: Deploy CloudFormation Stack
       run: |
+        set +e
         aws cloudformation deploy \
           --template-file infra/eks-with-ecr.yml \
           --stack-name catalyst-ai-cluster \
           --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
           --region ${{ secrets.AWS_REGION }}
+        status=$?
+        if [ $status -ne 0 ]; then
+          echo "CloudFormation deploy failed. Recent stack events:"
+          aws cloudformation describe-stack-events \
+            --stack-name catalyst-ai-cluster \
+            --region ${{ secrets.AWS_REGION }} \
+            --max-items 30 || true
+          exit $status
+        fi
