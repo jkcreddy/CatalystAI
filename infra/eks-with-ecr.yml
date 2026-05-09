@@ -175,6 +175,30 @@ Resources:
 
 
 Outputs:
+  VPCId:
+    Description: ID of the shared VPC
+    Value: !Ref VPC
+    Export:
+      Name: CatalystAI-VPC-Id
+
+  PublicSubnet1Id:
+    Description: ID of shared public subnet 1
+    Value: !Ref PublicSubnet1
+    Export:
+      Name: CatalystAI-PublicSubnet1-Id
+
+  PublicSubnet2Id:
+    Description: ID of shared public subnet 2
+    Value: !Ref PublicSubnet2
+    Export:
+      Name: CatalystAI-PublicSubnet2-Id
+
+  PublicRouteTableId:
+    Description: ID of the shared public route table
+    Value: !Ref PublicRouteTable
+    Export:
+      Name: CatalystAI-PublicRouteTable-Id
+
   ECRRepositoryUri:
     Description: URI of the ECR Repository
     Value: !GetAtt CatalystAIECR.RepositoryUri

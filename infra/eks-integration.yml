@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Standalone EKS Cluster with NodeGroup
+Description: Integration EKS Cluster that reuses the shared CatalystAI VPC
 
 Parameters:
   ClusterName:
@@ -11,91 +11,47 @@ Parameters:
   DesiredCapacity:
     Type: Number
     Default: 2
-  #ECRRepositoryName:
-  #  Type: String
-  #  Default: integration-ecr-repo
 
 Resources:
-  ### --- VPC ---
-  VPC:
-    Type: AWS::EC2::VPC
-    Properties:
-      CidrBlock: 10.0.0.0/16
-      EnableDnsSupport: true
-      EnableDnsHostnames: true
-      Tags:
-        - Key: Name
-          Value: EKS-VPC
-
-  InternetGateway:
-    Type: AWS::EC2::InternetGateway
-    Properties:
-      Tags:
-        - Key: Name
-          Value: EKS-IGW
-
-  AttachGateway:
-    Type: AWS::EC2::VPCGatewayAttachment
-    Properties:
-      VpcId: !Ref VPC
-      InternetGatewayId: !Ref InternetGateway
-
-  PublicSubnet1:
+  IntegrationSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.0.1.0/24
+      VpcId: !ImportValue CatalystAI-VPC-Id
+      CidrBlock: 10.0.3.0/24
       AvailabilityZone: !Select [0, !GetAZs ""]
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
-          Value: PublicSubnet1
+          Value: IntegrationSubnet1
 
-  PublicSubnet2:
+  IntegrationSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.0.2.0/24
+      VpcId: !ImportValue CatalystAI-VPC-Id
+      CidrBlock: 10.0.4.0/24
       AvailabilityZone: !Select [1, !GetAZs ""]
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
-          Value: PublicSubnet2
+          Value: IntegrationSubnet2
 
-  PublicRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: PublicRouteTable
-
-  PublicRoute:
-    Type: AWS::EC2::Route
-    DependsOn: AttachGateway
-    Properties:
-      RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref InternetGateway
-
-  SubnetRouteTableAssociation1:
+  IntegrationSubnetRouteTableAssociation1:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: !Ref PublicSubnet1
-      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref IntegrationSubnet1
+      RouteTableId: !ImportValue CatalystAI-PublicRouteTable-Id
 
-  SubnetRouteTableAssociation2:
+  IntegrationSubnetRouteTableAssociation2:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: !Ref PublicSubnet2
-      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref IntegrationSubnet2
+      RouteTableId: !ImportValue CatalystAI-PublicRouteTable-Id
 
-  ### --- Security Group for EKS ---
-  EKSSecurityGroup:
+  SharedVpcSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow communication in EKS cluster
-      VpcId: !Ref VPC
+      GroupDescription: Allow communication in integration EKS cluster
+      VpcId: !ImportValue CatalystAI-VPC-Id
       SecurityGroupIngress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
@@ -103,17 +59,6 @@ Resources:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
 
-  ### --- ECR Repository ---
-
-  #CatalystAIECR:
-  #  Type: AWS::ECR::Repository
-  #  Properties:
-  #    RepositoryName: !Ref ECRRepositoryName
-  #    ImageScanningConfiguration:
-  #      ScanOnPush: true
-  #    ImageTagMutability: MUTABLE
-
-  ### --- IAM Role for EKS Cluster ---
   EKSClusterRole:
     Type: AWS::IAM::Role
     Properties:
@@ -127,7 +72,6 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
 
-  ### --- EKS Cluster ---
   EKSCluster:
     Type: AWS::EKS::Cluster
     Properties:
@@ -135,12 +79,11 @@ Resources:
       RoleArn: !GetAtt EKSClusterRole.Arn
       ResourcesVpcConfig:
         SubnetIds:
-          - !Ref PublicSubnet1
-          - !Ref PublicSubnet2
+          - !Ref IntegrationSubnet1
+          - !Ref IntegrationSubnet2
         SecurityGroupIds:
-          - !Ref EKSSecurityGroup
+          - !Ref SharedVpcSecurityGroup
 
-  ### --- IAM Role for NodeGroup ---
   NodeGroupRole:
     Type: AWS::IAM::Role
     Properties:
@@ -156,16 +99,15 @@ Resources:
         - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
         - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
 
-    ### --- EKS NodeGroup ---
   NodeGroup:
     Type: AWS::EKS::Nodegroup
-    DependsOn: EKSCluster   # ensures cluster is ready
+    DependsOn: EKSCluster
     Properties:
       ClusterName: !Ref EKSCluster
       NodeRole: !GetAtt NodeGroupRole.Arn
       Subnets:
-        - !Ref PublicSubnet1
-        - !Ref PublicSubnet2
+        - !Ref IntegrationSubnet1
+        - !Ref IntegrationSubnet2
       ScalingConfig:
         DesiredSize: !Ref DesiredCapacity
         MaxSize: 3
@@ -173,14 +115,7 @@ Resources:
       InstanceTypes:
         - !Ref NodeInstanceType
 
-
 Outputs:
-  #ECRRepositoryUri:
-  #  Description: URI of the ECR Repository
-  #  Value: !GetAtt CatalystAIECR.RepositoryUri
-  #  Export:
-  #    Name: CatalystAI-ECR-Uri
-
   EKSClusterName:
-    Description: Name of the EKS Cluster
+    Description: Name of the integration EKS Cluster
     Value: !Ref ClusterName

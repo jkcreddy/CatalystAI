@@ -6,6 +6,10 @@ on:
 jobs:
   provision:
     runs-on: ubuntu-latest
+    env:
+      STACK_NAME: catalyst-ai-cluster
+      CLUSTER_NAME: catalystai-eks-cluster
+      ECR_REPOSITORY_NAME: catalystai-ecr-repo
 
     steps:
     - name: Checkout code
@@ -18,20 +22,57 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ secrets.AWS_REGION }}
 
+    - name: Preflight check for existing named resources
+      run: |
+        set +e
+        aws eks describe-cluster --name "$CLUSTER_NAME" --region ${{ secrets.AWS_REGION }} >/dev/null 2>&1
+        eks_status=$?
+        aws ecr describe-repositories --repository-names "$ECR_REPOSITORY_NAME" --region ${{ secrets.AWS_REGION }} >/dev/null 2>&1
+        ecr_status=$?
+        set -e
+
+        if [ $eks_status -eq 0 ]; then
+          echo "EKS cluster '$CLUSTER_NAME' already exists in region ${{ secrets.AWS_REGION }}."
+          echo "This template creates a custom-named cluster, so CloudFormation early validation can fail on name collisions."
+          exit 1
+        fi
+
+        if [ $ecr_status -eq 0 ]; then
+          echo "ECR repository '$ECR_REPOSITORY_NAME' already exists in region ${{ secrets.AWS_REGION }}."
+          echo "This template creates a custom-named repository, so CloudFormation early validation can fail on name collisions."
+          exit 1
+        fi
+
     - name: Deploy CloudFormation Stack
       run: |
         set +e
         aws cloudformation deploy \
           --template-file infra/eks-with-ecr.yml \
-          --stack-name catalyst-ai-cluster \
+          --stack-name $STACK_NAME \
           --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
           --region ${{ secrets.AWS_REGION }}
         status=$?
         if [ $status -ne 0 ]; then
           echo "CloudFormation deploy failed. Recent stack events:"
           aws cloudformation describe-stack-events \
-            --stack-name catalyst-ai-cluster \
+            --stack-name $STACK_NAME \
             --region ${{ secrets.AWS_REGION }} \
             --max-items 30 || true
+          echo "Change sets for the stack:"
+          aws cloudformation list-change-sets \
+            --stack-name $STACK_NAME \
+            --region ${{ secrets.AWS_REGION }} || true
+          CHANGE_SET_ARN=$(aws cloudformation list-change-sets \
+            --stack-name $STACK_NAME \
+            --region ${{ secrets.AWS_REGION }} \
+            --query 'Summaries[0].ChangeSetId' \
+            --output text 2>/dev/null || true)
+          if [ -n "$CHANGE_SET_ARN" ] && [ "$CHANGE_SET_ARN" != "None" ]; then
+            echo "Latest change set details:"
+            aws cloudformation describe-change-set \
+              --change-set-name "$CHANGE_SET_ARN" \
+              --stack-name $STACK_NAME \
+              --region ${{ secrets.AWS_REGION }} || true
+          fi
           exit $status
         fi
