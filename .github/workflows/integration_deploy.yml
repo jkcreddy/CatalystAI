@@ -98,7 +98,7 @@ jobs:
     # Deploy manifests
     - name: Apply Kubernetes manifests
       run: |
-        kubectl apply -f k8/nginx.yaml
+        kubectl apply -f k8/nginx.yml
 
     #- name: Patch deployment with new image tag
     #  env:
